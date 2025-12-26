@@ -1,4 +1,4 @@
-// File: E:\AI App Builder\project\web\app\layout.tsx
+// File: E:\AI App Builder\FGH\Brix-maybe\web\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

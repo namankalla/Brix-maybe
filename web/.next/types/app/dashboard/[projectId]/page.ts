@@ -1,4 +1,4 @@
-// File: E:\AI App Builder\project\web\app\dashboard\[projectId]\page.tsx
+// File: E:\AI App Builder\FGH\Brix-maybe\web\app\dashboard\[projectId]\page.tsx
 import * as entry from '../../../../../app/dashboard/[projectId]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
