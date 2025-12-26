@@ -18,6 +18,35 @@ const nextConfig = {
             key: 'Cross-Origin-Embedder-Policy',
             value: 'credentialless',
           },
+          {
+            key: 'Cross-Origin-Resource-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Origin-Agent-Cluster',
+            value: '?1',
+          },
+        ],
+      },
+      {
+        source: '/dashboard/:path*/preview-wc/:rest*',
+        headers: [
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'credentialless',
+          },
+          {
+            key: 'Cross-Origin-Resource-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Origin-Agent-Cluster',
+            value: '?1',
+          },
         ],
       },
     ];
