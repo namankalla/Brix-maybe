@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
-import { Mail, Lock, User } from "lucide-react"
+import { Mail, Lock, User, Eye, EyeOff } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { ConfirmEmailPopup } from "@/components/ui/confirm-email-popup"
 
@@ -16,6 +16,7 @@ export default function SignUpForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -88,12 +89,19 @@ export default function SignUpForm() {
             <Lock className="h-5 w-5 text-white/60" />
             <Input
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               placeholder="Create a password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="border-0 shadow-none focus-visible:ring-0 bg-transparent placeholder:text-white/50 text-white"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="text-white/60 hover:text-white/80 transition-colors"
+            >
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            </button>
           </div>
         </div>
 
