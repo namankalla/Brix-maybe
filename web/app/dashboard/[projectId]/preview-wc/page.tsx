@@ -107,9 +107,7 @@ export default function ProjectPreviewWebContainerPage() {
             npm run dev
           </div>
           <div className="mt-3 text-xs text-gray-500 truncate">Project: {projectId}</div>
-          <div className="mt-3 text-[11px] text-gray-500">
-            WebContainer preview mode. Requires NEXT_PUBLIC_WEBCONTAINER_CLIENT_ID.
-          </div>
+          <div className="mt-3 text-[11px] text-gray-500">WebContainer preview mode.</div>
         </div>
 
         <div className="flex-1 min-h-0">
