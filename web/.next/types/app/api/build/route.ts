@@ -1,4 +1,4 @@
-// File: E:\AI App Builder\project\web\app\api\build\route.ts
+// File: E:\AI App Builder\FGH\Brix-maybe\web\app\api\build\route.ts
 import * as entry from '../../../../../app/api/build/route.js'
 import type { NextRequest } from 'next/server.js'
 
