@@ -107,10 +107,8 @@ export default function PreviewPanel({
 
         const onServerReady = (port: number, url: string) => {
           if (cancelled) return;
-          if (port === 5173) {
-            setPreviewUrl(url);
-            setStatusText('Dev server running');
-          }
+          setPreviewUrl(url);
+          setStatusText(`Dev server running (port ${port})`);
         };
 
         wc.on('server-ready', onServerReady);
@@ -258,9 +256,13 @@ export default function PreviewPanel({
                   <div className="max-w-md w-full space-y-3">
                     <div className="text-sm font-medium text-gray-200">WebContainer preview failed</div>
                     <div className="text-xs text-gray-400">{statusText}</div>
-                    <div className="text-xs text-gray-400">
-                      Set <span className="font-mono">NEXT_PUBLIC_WEBCONTAINER_CLIENT_ID</span> and restart the dev server.
-                    </div>
+                    {runtimeError ? (
+                      <div className="text-xs text-gray-400">{runtimeError}</div>
+                    ) : (
+                      <div className="text-xs text-gray-400">
+                        Check the log output below for the exact install/dev error.
+                      </div>
+                    )}
                     {logs ? (
                       <pre className="mt-3 max-h-72 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950 p-3 text-[11px] leading-relaxed text-gray-200">{logs}</pre>
                     ) : null}

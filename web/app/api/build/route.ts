@@ -165,9 +165,7 @@ export default defineConfig({
           },
           dependencies: {
             react: '^18.3.1',
-            'react-dom': '^18.3.1'
-          },
-          devDependencies: {
+            'react-dom': '^18.3.1',
             vite: '^5.0.0',
             '@vitejs/plugin-react': '^4.0.0'
           }

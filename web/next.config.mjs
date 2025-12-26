@@ -6,22 +6,22 @@ const nextConfig = {
     serverActions: { allowedOrigins: ['*'] },
   },
   async headers() {
-  return [
-    {
-      source: '/dashboard/:path*/preview-wc',
-      headers: [
-        {
-          key: 'Cross-Origin-Opener-Policy',
-          value: 'same-origin',
-        },
-        {
-          key: 'Cross-Origin-Embedder-Policy',
-          value: 'credentialless',
-        },
-      ],
-    },
-  ]
-};
+    return [
+      {
+        source: '/dashboard/:path*/preview-wc',
+        headers: [
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
+          },
+          {
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'credentialless',
+          },
+        ],
+      },
+    ];
+  },
 
   images: {
     remotePatterns: [

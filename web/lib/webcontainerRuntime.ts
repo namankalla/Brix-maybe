@@ -89,7 +89,7 @@ export async function mountProject(files: ProjectFile[], key: string) {
 
 export async function npmInstall(options: { onOutput?: (chunk: string) => void } = {}) {
   const wc = await getWebContainer();
-  const proc = await wc.spawn('npm', ['install']);
+  const proc = await wc.spawn('npm', ['install', '--include=dev']);
 
   proc.output.pipeTo(
     new WritableStream({
@@ -115,7 +115,7 @@ export async function startDevServer(options: { onOutput?: (chunk: string) => vo
     state.devProcess = null;
   }
 
-  const proc = await wc.spawn('npm', ['run', 'dev', '--', '--host', '0.0.0.0', '--port', '5173']);
+  const proc = await wc.spawn('npm', ['run', 'dev']);
   state.devProcess = proc;
 
   proc.output.pipeTo(
