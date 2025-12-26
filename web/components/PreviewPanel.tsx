@@ -63,6 +63,14 @@ export default function PreviewPanel({
   }, [activeFile, files]);
 
   useEffect(() => {
+  console.log(
+    'WebContainer Client ID:',
+    process.env.NEXT_PUBLIC_WEBCONTAINER_CLIENT_ID
+  );
+}, []);
+
+
+  useEffect(() => {
     setPreviewUrl(null);
     setRuntimeError(null);
   }, [projectId]);
