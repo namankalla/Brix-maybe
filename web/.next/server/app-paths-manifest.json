@@ -1,4 +1,5 @@
 {
+  "/dashboard/[projectId]/page": "app/dashboard/[projectId]/page.js",
   "/api/chat/route": "app/api/chat/route.js",
-  "/dashboard/[projectId]/page": "app/dashboard/[projectId]/page.js"
+  "/dashboard/[projectId]/preview/page": "app/dashboard/[projectId]/preview/page.js"
 }
