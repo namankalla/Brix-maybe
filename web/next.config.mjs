@@ -8,7 +8,7 @@ const nextConfig = {
   async headers() {
   return [
     {
-      source: '/:path*',
+      source: '/dashboard/:path*/preview-wc',
       headers: [
         {
           key: 'Cross-Origin-Opener-Policy',
@@ -20,8 +20,9 @@ const nextConfig = {
         },
       ],
     },
-  ];
-},
+  ]
+};
+
   images: {
     remotePatterns: [
       {

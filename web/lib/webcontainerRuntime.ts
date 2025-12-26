@@ -157,8 +157,18 @@ export async function listProjectFiles() {
       }
     }
   };
+  
 
   const out: string[] = [];
   await walk('/', out);
   return out.sort();
 }
+// Ensure WebContainer auth is initialized as soon as this module loads (client-side only)
+if (typeof window !== 'undefined') {
+  try {
+    ensureAuthInit();
+  } catch {
+    // swallow error here; UI will show it later if needed
+  }
+}
+
