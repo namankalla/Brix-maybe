@@ -104,11 +104,20 @@ Constraints:
       "export default function App() {\n  return (\n    <div style={{ padding: 24, fontFamily: 'system-ui' }}>\n      <h1 style={{ margin: 0, fontSize: 22 }}>Generated App</h1>\n      <p style={{ marginTop: 8, opacity: 0.8 }}>Edit src/App.tsx to start building.</p>\n    </div>\n  );\n}\n";
 
     const hasApp = Boolean(getFile('src/App.tsx')) || Boolean(getFile('src/App.jsx'));
-    if (!hasApp) upsertFile('src/App.tsx', defaultAppTsx);
+    if (!hasApp) upsertFile('src/App.jsx', defaultAppTsx);
 
     upsertFile(
-      'src/main.tsx',
-      `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);\n`,
+      'src/main.jsx',
+      `import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+)`,
     );
 
     upsertFile('src/index.css', `:root { color-scheme: dark; }\nbody { margin: 0; background: #000; color: #fff; }\n`);
@@ -116,40 +125,52 @@ Constraints:
 
     upsertFile(
       'index.html',
-      `<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>${generatedData?.blueprint?.app_name || 'App'}</title>\n  </head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.tsx"></script>\n  </body>\n</html>\n`,
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${generatedData?.blueprint?.app_name || 'App'}</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>`,
     );
 
     upsertFile(
-      'vite.config.ts',
-      `import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n  server: { port: 5173, strictPort: true },\n});\n`,
+      'vite.config.js',
+      `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    host: true,
+    port: 5173
+  }
+})`,
     );
 
     upsertFile(
       'package.json',
       JSON.stringify(
         {
-          name: String(generatedData?.blueprint?.app_name || 'generated-app')
-            .toLowerCase()
-            .replace(/[^a-z0-9\-]+/g, '-'),
+          name: 'teamtasker',
           private: true,
-          version: '0.0.0',
-          type: 'module',
           scripts: {
-            dev: 'vite',
-            build: 'vite build',
-            preview: 'vite preview',
+            dev: 'vite --host 0.0.0.0 --port 5173',
+            build: 'vite build'
           },
           dependencies: {
             react: '^18.3.1',
-            'react-dom': '^18.3.1',
+            'react-dom': '^18.3.1'
           },
           devDependencies: {
-            '@types/react': '^18.3.7',
-            '@types/react-dom': '^18.3.0',
-            '@vitejs/plugin-react': '^4.3.1',
-            typescript: '^5.6.3',
-            vite: '^5.4.0',
-          },
+            vite: '^5.0.0',
+            '@vitejs/plugin-react': '^4.0.0'
+          }
         },
         null,
         2,
