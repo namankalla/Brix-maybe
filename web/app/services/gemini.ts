@@ -1,12 +1,21 @@
 // app/services/gemini.ts
-const GEMINI_API_KEY = 'AIzaSyCpGUitfjyJ8WAzRsyGehkVjpV8jq9tUuk';
+import 'server-only';
+
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 export async function generateText(prompt: string) {
   try {
     console.log('Calling Gemini API with prompt:', prompt);
     
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Missing GEMINI_API_KEY. Set it in your environment (.env.local) and restart the dev server.');
+    }
+
+    const redactedKey = apiKey.length <= 8 ? '***' : `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+    console.log('Gemini API key loaded (redacted):', redactedKey);
+    
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

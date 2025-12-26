@@ -297,8 +297,21 @@ Constraints:
     });
   } catch (error) {
     console.error('Error in build API:', error);
+    const msg = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+    const m = msg.match(/retryDelay"\s*:\s*"(\d+)s"/i);
+    const retryAfterSeconds = m ? Number(m[1]) : undefined;
+    const isRateLimited = msg.includes('Gemini API Error: 429') || msg.includes('RESOURCE_EXHAUSTED');
+    if (isRateLimited) {
+      return NextResponse.json(
+        { error: 'RATE_LIMITED', details: msg, retryAfterSeconds: retryAfterSeconds ?? 60 },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(retryAfterSeconds ?? 60) },
+        },
+      );
+    }
     return NextResponse.json(
-      { error: 'Failed to generate app' },
+      { error: 'Failed to generate app', details: msg },
       { status: 500 }
     );
   }

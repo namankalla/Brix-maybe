@@ -6,7 +6,7 @@ import Header from '@/components/Header';
 import ChatWindow from '@/components/ChatWindow';
 import ChatInput from '@/components/ChatInput';
 import { Message, Project } from '@/types/app';
-import { sendMessage, buildProject } from '@/lib/api';
+import { ApiError, sendMessage, buildProject } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 const initialProjects: Project[] = [
@@ -28,6 +28,8 @@ export default function DashboardPage() {
   const [files, setFiles] = useState<{path:string; content:string}[]>([]);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const currentProject = useMemo(()=> projects.find(p=>p.id===projectId) ?? projects[0], [projects, projectId]);
 
@@ -43,6 +45,25 @@ export default function DashboardPage() {
       // ignore
     }
   }, [messages, projectId]);
+
+  const cooldownRemainingSec = useMemo(() => {
+    if (!cooldownUntil) return 0;
+    return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  }, [cooldownUntil]);
+
+  useEffect(() => {
+    if (!cooldownUntil) return;
+    if (cooldownRemainingSec <= 0) {
+      setCooldownUntil(null);
+      setErrorBanner(null);
+      return;
+    }
+    const t = window.setInterval(() => {
+      // force re-render via derived memo
+      setCooldownUntil((v) => v);
+    }, 250);
+    return () => window.clearInterval(t);
+  }, [cooldownUntil, cooldownRemainingSec]);
 
   // Auth guard: redirect to sign-in if not authenticated
   useEffect(() => {
@@ -78,6 +99,15 @@ export default function DashboardPage() {
     try {
       const ai = await sendMessage(projectId, nextMessages, 'interview');
       setMessages([...nextMessages, ai]);
+      setErrorBanner(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfterSeconds ?? 60;
+        setCooldownUntil(Date.now() + secs * 1000);
+        setErrorBanner(`Rate limit reached. Try again in ${secs}s.`);
+      } else {
+        setErrorBanner(e instanceof ApiError ? e.bodyText || e.message : e instanceof Error ? e.message : 'Failed to send');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -100,6 +130,14 @@ export default function DashboardPage() {
       }
 
       router.push((`/dashboard/${projectId}/preview`) as any);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 429) {
+        const secs = e.retryAfterSeconds ?? 60;
+        setCooldownUntil(Date.now() + secs * 1000);
+        setErrorBanner(`Rate limit reached. Try again in ${secs}s.`);
+      } else {
+        setErrorBanner(e instanceof Error ? e.message : 'Build failed');
+      }
     } finally { setIsBuilding(false); }
   };
 
@@ -131,6 +169,13 @@ export default function DashboardPage() {
         
         <div className="flex-1 flex overflow-hidden">
           <div className="flex-1 flex flex-col min-w-0 bg-black">
+            {errorBanner ? (
+              <div className="mx-auto w-full max-w-3xl px-4 pt-3">
+                <div className="rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-xs text-gray-200">
+                  {cooldownRemainingSec > 0 ? `Rate limited. Retry in ${cooldownRemainingSec}s.` : errorBanner}
+                </div>
+              </div>
+            ) : null}
             <ChatWindow
               messages={messages}
               isLoading={isLoading}
@@ -138,8 +183,8 @@ export default function DashboardPage() {
             />
             <ChatInput
               onSend={handleSendMessage}
-              isLoading={isLoading}
-              placeholder="Describe the app you want to build..."
+              isLoading={isLoading || cooldownRemainingSec > 0}
+              placeholder={cooldownRemainingSec > 0 ? `Rate limited. Try again in ${cooldownRemainingSec}s...` : 'Describe the app you want to build...'}
             />
           </div>
         </div>

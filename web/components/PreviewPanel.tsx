@@ -1,13 +1,16 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
-  SandpackCodeEditor,
-  SandpackFileExplorer,
-  SandpackLayout,
-  SandpackPreview,
-  SandpackProvider,
-} from '@codesandbox/sandpack-react';
-import { nightOwl } from '@codesandbox/sandpack-themes';
+  getWebContainer,
+  listProjectFiles,
+  mountProject,
+  npmInstall,
+  readProjectFile,
+  startDevServer,
+  writeProjectFile,
+  type ProjectFile,
+} from '@/lib/webcontainerRuntime';
 
 export type UiElementContext = {
   selector?: string;
@@ -16,171 +19,179 @@ export type UiElementContext = {
   url?: string;
 };
 
+const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+
+function normalizePath(p: string) {
+  const s = String(p || '').replace(/\\/g, '/');
+  return s.startsWith('/') ? s : `/${s}`;
+}
+
 export default function PreviewPanel({
-  previewHtml,
+  projectId,
   files,
+  previewHtml,
+  forceWebContainer,
   title,
-  inspectEnabled,
-  onElementSelected,
 }: {
-  previewHtml: string | null;
-  files: { path: string; content: string }[];
+  projectId: string;
+  files: ProjectFile[];
+  previewHtml?: string | null;
+  forceWebContainer?: boolean;
   title?: string;
-  inspectEnabled?: boolean;
-  onElementSelected?: (ctx: UiElementContext) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'preview' | 'files'>('preview');
-  const previewContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [statusText, setStatusText] = useState<string>('Idle');
+  const [logs, setLogs] = useState<string>('');
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+
+  const [fileList, setFileList] = useState<string[]>([]);
+  const [activeFile, setActiveFile] = useState<string>('/src/App.tsx');
+  const [activeFileContent, setActiveFileContent] = useState<string>('');
+  const writeDebounceRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (previewHtml) {
-      setActiveTab('preview');
-    }
-  }, [previewHtml]);
+    if (!Array.isArray(files) || files.length === 0) return;
 
-  const sandpackFiles = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const f of files || []) {
-      if (!f?.path) continue;
-      const normalized = f.path.startsWith('/') ? f.path : `/${f.path}`;
-      map[normalized] = String(f.content ?? '');
-    }
-    return map;
+    const normalized = new Set(files.map((f) => normalizePath(f.path)));
+    const current = normalizePath(activeFile);
+    if (normalized.has(current)) return;
+
+    const preferred = ['/src/App.tsx', '/src/App.jsx', '/src/main.tsx', '/src/main.jsx', '/index.html'];
+    const pick = preferred.find((p) => normalized.has(p)) || normalizePath(files[0].path);
+    setActiveFile(pick);
+  }, [activeFile, files]);
+
+  useEffect(() => {
+    setPreviewUrl(null);
+    setRuntimeError(null);
+  }, [projectId]);
+
+  const hasProject = useMemo(() => {
+    return Array.isArray(files) && files.some((f) => f?.path === 'package.json' || f?.path === '/package.json');
   }, [files]);
 
-  const hasSandpackProject = useMemo(() => {
-    return Boolean(sandpackFiles['/package.json'] || sandpackFiles['/src/main.tsx'] || sandpackFiles['/index.html']);
-  }, [sandpackFiles]);
+  const mountKey = useMemo(() => {
+    const parts: string[] = [projectId];
+    for (const f of files || []) {
+      parts.push(`${f.path}:${(f.content || '').length}`);
+    }
+    return parts.join('|');
+  }, [files, projectId]);
 
   useEffect(() => {
-    if (activeTab !== 'preview') return;
-    const container = previewContainerRef.current;
-    if (!container) return;
+    if (!hasProject) return;
 
-    const findIframe = () => {
-      const iframe = container.querySelector('iframe');
-      previewIframeRef.current = iframe as HTMLIFrameElement | null;
+    let cancelled = false;
+    let detachServerListener: (() => void) | null = null;
+
+    const appendLog = (chunk: string) => {
+      setLogs((prev) => {
+        const next = `${prev}${chunk}`;
+        return next.length > 20000 ? next.slice(next.length - 20000) : next;
+      });
     };
 
-    findIframe();
+    const run = async () => {
+      try {
+        setStatusText('Booting WebContainer...');
+        const wc = await getWebContainer();
 
-    const obs = new MutationObserver(() => findIframe());
-    obs.observe(container, { childList: true, subtree: true });
-    return () => obs.disconnect();
-  }, [activeTab, hasSandpackProject]);
+        const onServerReady = (port: number, url: string) => {
+          if (cancelled) return;
+          if (port === 5173) {
+            setPreviewUrl(url);
+            setStatusText('Dev server running');
+          }
+        };
 
-  useEffect(() => {
-    if (!inspectEnabled) return;
-    if (activeTab !== 'preview') return;
-    if (!hasSandpackProject) return;
+        wc.on('server-ready', onServerReady);
+        detachServerListener = () => {
+          try {
+            // @ts-expect-error stackblitz api
+            wc.off?.('server-ready', onServerReady);
+          } catch {
+            // ignore
+          }
+        };
 
-    const iframe = previewIframeRef.current;
-    if (!iframe) return;
+        setStatusText('Mounting files...');
+        await mountProject(files, mountKey);
 
-    let cleanupPrevOutline: (() => void) | null = null;
+        const installedKey = `wc:installed:${mountKey}`;
+        const alreadyInstalled = (() => {
+          try {
+            return sessionStorage.getItem(installedKey) === '1';
+          } catch {
+            return false;
+          }
+        })();
 
-    const getSelector = (el: Element) => {
-      const parts: string[] = [];
-      let current: Element | null = el;
-      let depth = 0;
-      while (current && depth < 5 && current.nodeType === 1) {
-        let part = current.tagName.toLowerCase();
-        const id = (current as HTMLElement).id;
-        if (id) {
-          part += `#${CSS.escape(id)}`;
-          parts.unshift(part);
-          break;
-        }
-        const className = (current as HTMLElement).className;
-        if (className && typeof className === 'string') {
-          const first = className
-            .split(/\s+/)
-            .filter(Boolean)
-            .slice(0, 2)
-            .map((c) => `.${CSS.escape(c)}`)
-            .join('');
-          if (first) part += first;
-        }
-        const parent = current.parentElement;
-        if (parent) {
-          const siblings = Array.from(parent.children).filter((c) => c.tagName === current!.tagName);
-          if (siblings.length > 1) {
-            const index = siblings.indexOf(current) + 1;
-            part += `:nth-of-type(${index})`;
+        if (!alreadyInstalled) {
+          setStatusText('Installing dependencies (npm install)...');
+          const code = await npmInstall({ onOutput: appendLog });
+          if (code !== 0) {
+            setStatusText(`npm install failed (exit ${code})`);
+            return;
+          }
+          try {
+            sessionStorage.setItem(installedKey, '1');
+          } catch {
+            // ignore
           }
         }
-        parts.unshift(part);
-        current = current.parentElement;
-        depth++;
-      }
-      return parts.join(' > ');
-    };
 
-    const attach = () => {
-      const doc = iframe.contentDocument;
-      if (!doc) return;
+        setStatusText('Starting dev server...');
+        await startDevServer({ onOutput: appendLog });
 
-      const onMove = (e: MouseEvent) => {
-        const target = e.target as HTMLElement | null;
-        if (!target || !(target instanceof doc.defaultView!.HTMLElement)) return;
-
-        if (cleanupPrevOutline) cleanupPrevOutline();
-
-        const prevOutline = target.style.outline;
-        const prevOutlineOffset = target.style.outlineOffset;
-        target.style.outline = '2px solid rgba(37, 99, 235, 0.9)';
-        target.style.outlineOffset = '2px';
-
-        cleanupPrevOutline = () => {
-          target.style.outline = prevOutline;
-          target.style.outlineOffset = prevOutlineOffset;
-        };
-      };
-
-      const onClick = (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const target = e.target as HTMLElement | null;
-        if (!target || !(target instanceof doc.defaultView!.HTMLElement)) return;
-
-        const selector = getSelector(target);
-        const text = (target.innerText || target.textContent || '').trim().slice(0, 160);
-        const htmlSnippet = (target.outerHTML || '').trim().slice(0, 800);
-        const url = doc.defaultView?.location?.href;
-
-        onElementSelected?.({ selector, text, htmlSnippet, url });
-      };
-
-      doc.addEventListener('mousemove', onMove, true);
-      doc.addEventListener('click', onClick, true);
-
-      return () => {
-        doc.removeEventListener('mousemove', onMove, true);
-        doc.removeEventListener('click', onClick, true);
-        if (cleanupPrevOutline) cleanupPrevOutline();
-      };
-    };
-
-    let detach: (() => void) | undefined;
-
-    const tryAttach = () => {
-      try {
-        detach = attach();
-      } catch {
-        // ignore
+        const list = await listProjectFiles();
+        if (!cancelled) {
+          setFileList(list.filter((p) => !p.includes('/node_modules/') && !p.includes('/.git/')));
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Unknown error';
+        setRuntimeError(msg);
+        setStatusText(`Runtime error: ${msg}`);
       }
     };
 
-    tryAttach();
-    iframe.addEventListener('load', tryAttach);
+    run();
 
     return () => {
-      iframe.removeEventListener('load', tryAttach);
-      if (detach) detach();
+      cancelled = true;
+      if (detachServerListener) detachServerListener();
     };
-  }, [inspectEnabled, activeTab, hasSandpackProject, onElementSelected]);
+  }, [files, hasProject, mountKey]);
+
+  useEffect(() => {
+    if (!hasProject) return;
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const content = await readProjectFile(activeFile);
+        if (!cancelled) setActiveFileContent(content);
+      } catch {
+        if (!cancelled) setActiveFileContent('');
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFile, files, hasProject]);
+
+  const handleEditorChange = (value: string | undefined) => {
+    const next = value ?? '';
+    setActiveFileContent(next);
+
+    if (writeDebounceRef.current) window.clearTimeout(writeDebounceRef.current);
+    writeDebounceRef.current = window.setTimeout(() => {
+      writeProjectFile(activeFile, next).catch(() => {
+        // ignore
+      });
+    }, 250);
+  };
 
   return (
     <div className="h-full border-l border-gray-800 bg-gray-900 flex flex-col min-w-[420px]">
@@ -188,7 +199,7 @@ export default function PreviewPanel({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-gray-100 truncate">{title || 'Live Preview'}</div>
           <div className="text-xs text-gray-400 truncate">
-            {hasSandpackProject ? 'Live preview updates as you edit files.' : 'Build to generate a live preview.'}
+            {hasProject ? statusText : 'Build to generate a runnable React app.'}
           </div>
         </div>
 
@@ -202,22 +213,21 @@ export default function PreviewPanel({
               Preview
             </button>
             <button
-              onClick={() => setActiveTab('files')}
-              className={`px-3 py-1.5 text-xs ${activeTab === 'files' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700/60'}`}
+              onClick={() => setActiveTab('code')}
+              className={`px-3 py-1.5 text-xs ${activeTab === 'code' ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700/60'}`}
               type="button"
             >
-              Files
+              Code
             </button>
           </div>
 
           <button
             type="button"
-            disabled={!previewIframeRef.current?.src}
+            disabled={!previewUrl}
             onClick={() => {
-              const src = previewIframeRef.current?.src;
-              if (src) window.open(src, '_blank', 'noopener,noreferrer');
+              if (previewUrl) window.open(previewUrl, '_blank', 'noopener,noreferrer');
             }}
-            className={`px-3 py-1.5 text-xs rounded-lg border ${previewIframeRef.current?.src ? 'bg-black border-gray-700 text-gray-200 hover:bg-gray-950' : 'bg-gray-800 border-gray-800 text-gray-500 cursor-not-allowed'}`}
+            className={`px-3 py-1.5 text-xs rounded-lg border ${previewUrl ? 'bg-black border-gray-700 text-gray-200 hover:bg-gray-950' : 'bg-gray-800 border-gray-800 text-gray-500 cursor-not-allowed'}`}
           >
             Open
           </button>
@@ -225,35 +235,73 @@ export default function PreviewPanel({
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {hasSandpackProject ? (
-          <SandpackProvider
-            template="react-ts"
-            theme={nightOwl}
-            files={sandpackFiles}
-            options={{
-              recompileMode: 'immediate',
-              recompileDelay: 200,
-              visibleFiles: Object.keys(sandpackFiles).slice(0, 50),
-              activeFile: sandpackFiles['/src/App.tsx'] ? '/src/App.tsx' : undefined,
-            }}
-          >
-            <SandpackLayout style={{ height: '100%', background: 'transparent' }}>
-              {activeTab === 'preview' ? (
-                <div className="h-full w-full" ref={previewContainerRef}>
-                  <SandpackPreview style={{ height: '100%', border: 'none' }} />
-                </div>
+        {hasProject ? (
+          activeTab === 'preview' ? (
+            <div className="h-full w-full bg-black">
+              {previewUrl ? (
+                <iframe
+                  title="preview"
+                  className="w-full h-full bg-black"
+                  sandbox="allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"
+                  src={previewUrl}
+                />
               ) : (
-                <div className="h-full w-full grid grid-cols-[240px_1fr]">
-                  <div className="h-full overflow-hidden border-r border-gray-800 bg-black">
-                    <SandpackFileExplorer style={{ height: '100%' }} />
-                  </div>
-                  <div className="h-full overflow-hidden bg-black">
-                    <SandpackCodeEditor style={{ height: '100%' }} showLineNumbers showInlineErrors />
+                <div className="h-full flex items-center justify-center p-8">
+                  <div className="max-w-md w-full space-y-3">
+                    <div className="text-sm font-medium text-gray-200">WebContainer preview failed</div>
+                    <div className="text-xs text-gray-400">{statusText}</div>
+                    <div className="text-xs text-gray-400">
+                      Set <span className="font-mono">NEXT_PUBLIC_WEBCONTAINER_CLIENT_ID</span> and restart the dev server.
+                    </div>
+                    {logs ? (
+                      <pre className="mt-3 max-h-72 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950 p-3 text-[11px] leading-relaxed text-gray-200">{logs}</pre>
+                    ) : null}
                   </div>
                 </div>
               )}
-            </SandpackLayout>
-          </SandpackProvider>
+            </div>
+          ) : (
+            <div className="h-full w-full grid grid-cols-[260px_1fr] bg-black">
+              <div className="h-full overflow-y-auto border-r border-gray-800">
+                <div className="px-3 py-2 text-xs text-gray-300 border-b border-gray-800 bg-gray-950">Files</div>
+                <div className="p-2 space-y-1">
+                  {(fileList.length ? fileList : (files || []).map((f) => (f.path.startsWith('/') ? f.path : `/${f.path}`)))
+                    .filter((p) => p.endsWith('.ts') || p.endsWith('.tsx') || p.endsWith('.js') || p.endsWith('.jsx') || p.endsWith('.css') || p.endsWith('.html') || p.endsWith('.json'))
+                    .slice(0, 500)
+                    .map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setActiveFile(p)}
+                        className={`w-full text-left px-2 py-1 rounded text-xs font-mono truncate ${p === activeFile ? 'bg-gray-800 text-white' : 'text-gray-300 hover:bg-gray-900'}`}
+                        title={p}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                </div>
+              </div>
+              <div className="h-full overflow-hidden">
+                <div className="px-3 py-2 text-xs text-gray-300 border-b border-gray-800 bg-gray-950 font-mono truncate">{activeFile}</div>
+                <div className="h-[calc(100%-33px)]">
+                  <MonacoEditor
+                    height="100%"
+                    theme="vs-dark"
+                    language={activeFile.endsWith('.tsx') ? 'typescript' : activeFile.endsWith('.ts') ? 'typescript' : activeFile.endsWith('.jsx') ? 'javascript' : activeFile.endsWith('.js') ? 'javascript' : activeFile.endsWith('.css') ? 'css' : activeFile.endsWith('.html') ? 'html' : 'json'}
+                    value={activeFileContent}
+                    onChange={handleEditorChange}
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 12,
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                      smoothScrolling: true,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )
         ) : (
           <div className="h-full flex items-center justify-center p-8">
             <div className="max-w-sm w-full text-center space-y-3">
